@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rate Limiting — Rate Lab</title>
+<meta name="description" content="An interactive lab for rate limiting & admission control: fixed/sliding windows, token bucket, leaky bucket & GCRA, the distributed atomicity race, local vs borrowing, layered keying, fail-open/closed, the retry storm, and concurrency limits." />
+<meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d0d13" media="(prefers-color-scheme: dark)" />
+<link rel="preload" href="fonts/space-grotesk-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="preload" href="fonts/ibm-plex-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+<style>
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/space-grotesk-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:600; font-display:swap; src:url(fonts/space-grotesk-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family:"Space Grotesk"; font-style:normal; font-weight:700; font-display:swap; src:url(fonts/space-grotesk-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:400; font-display:swap; src:url(fonts/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/ibm-plex-sans-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Sans"; font-style:normal; font-weight:600; font-display:swap; src:url(fonts/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:400; font-display:swap; src:url(fonts/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family:"IBM Plex Mono"; font-style:normal; font-weight:500; font-display:swap; src:url(fonts/ibm-plex-mono-latin-500-normal.woff2) format("woff2"); }
+  :root {
+    --bg:#faf9f6; --panel:#ffffff; --panel-2:#f4f2ec; --sidebar-bg:#f4f2ec; --hover:#ebe9e1;
+    --ink:#191a20; --muted:#6c6d78; --line:#e7e3da;
+    --accent:#c8362f; --accent-soft:#fae7e4; --amber:#b96608; --amber-soft:#fbeed6;
+    --good:#0f9d6a; --good-soft:#e0f2ea; --warn:#b96608; --warn-soft:#fbeed6; --bad:#dd4650; --bad-soft:#fbe4e6; --info:#2f6db0;
+    --grid:#d7dbd2;
+    --shadow:0 1px 2px rgba(24,20,40,.04), 0 10px 30px -16px rgba(24,20,40,.18);
+    --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --display:"Space Grotesk", var(--sans);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0d0d13; --panel:#16161e; --panel-2:#1d1d27; --sidebar-bg:#0a0a10; --hover:#20202c;
+      --ink:#ecebf2; --muted:#9698a6; --line:#282833;
+      --accent:#f0776e; --accent-soft:#2c1614; --amber:#f0b45a; --amber-soft:#2a2216;
+      --good:#40d98c; --good-soft:#12261e; --warn:#f0b45a; --warn-soft:#2a2216; --bad:#ff6b72; --bad-soft:#2a141a; --info:#6ea8e0;
+      --grid:#282c34;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 14px 34px -18px rgba(0,0,0,.7);
+    }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  code, .mono { font-variant-numeric:tabular-nums; }
+  .app { display:flex; align-items:flex-start; min-height:100vh; }
+  .sidebar { position:sticky; top:0; height:100vh; width:270px; flex:none; z-index:40; display:flex; flex-direction:column; overflow-y:auto; padding:20px 14px 16px; background:var(--sidebar-bg); border-right:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:11px; padding:4px 10px 16px; margin-bottom:6px; border-bottom:1px solid var(--line); }
+  .glyph { width:32px; height:32px; flex:none; border-radius:9px; background:var(--accent); display:grid; place-items:center; color:#fff; font-family:var(--mono); font-size:17px; box-shadow:0 5px 14px -5px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .brand .wm { display:flex; flex-direction:column; line-height:1.25; }
+  .brand .wm b { font-family:var(--display); font-weight:600; font-size:14.5px; letter-spacing:-.01em; }
+  .brand .wm span { font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
+  nav.nav { display:flex; flex-direction:column; }
+  .nav-group { margin-top:13px; }
+  .nav-group-label { font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); padding:0 11px 6px; }
+  .nav-item { display:flex; align-items:center; gap:11px; width:100%; text-align:left; cursor:pointer; background:none; border:none; font-family:var(--sans); font-size:13.5px; color:var(--muted); padding:7px 11px; border-radius:8px; transition:.12s; line-height:1.3; }
+  .nav-item .n { font-family:var(--mono); font-size:11px; color:color-mix(in srgb, var(--muted) 75%, transparent); min-width:15px; text-align:right; }
+  .nav-item:hover { background:var(--hover); color:var(--ink); }
+  .nav-item.active { background:var(--accent-soft); color:var(--accent); font-weight:500; }
+  .nav-item.active .n { color:var(--accent); }
+  .side-foot { margin-top:auto; padding:15px 11px 2px; font-family:var(--mono); font-size:11px; line-height:1.7; color:var(--muted); }
+  .side-foot a { color:var(--muted); text-decoration:none; border-bottom:1px solid var(--line); }
+  .side-foot a:hover { color:var(--accent); border-color:var(--accent); }
+  .main { flex:1; min-width:0; padding:42px clamp(24px,4vw,60px) 100px; }
+  .main-inner { max-width:960px; margin:0 auto; }
+  .topbar, .backdrop { display:none; }
+  .hero-eyebrow { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin:0 0 14px; }
+  .hero h1 { font-family:var(--display); font-weight:600; font-size:clamp(31px,4.6vw,47px); margin:0 0 16px; letter-spacing:-.026em; line-height:1.03; max-width:15ch; }
+  .hero h1 em { font-style:normal; color:var(--accent); }
+  .hero p { color:var(--muted); margin:0; max-width:62ch; font-size:16.5px; line-height:1.6; }
+  .hero p strong { color:var(--ink); font-weight:600; }
+  .levers { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:12px; margin:30px 0 4px; }
+  .lever { background:var(--panel); border:1px solid var(--line); border-radius:13px; padding:15px 16px; box-shadow:var(--shadow); }
+  .lever b { font-family:var(--display); font-weight:600; font-size:14px; display:block; margin-bottom:4px; }
+  .lever span { font-size:12.5px; color:var(--muted); line-height:1.5; }
+  .overview-hint { font-size:14.5px; color:var(--muted); margin:24px 0 0; line-height:1.6; max-width:66ch; }
+  .overview-hint b { color:var(--ink); font-weight:600; }
+  section.phase { display:none; }
+  section.phase.active { display:block; animation:fade .22s ease; }
+  @keyframes fade { from { opacity:0; transform:translateY(5px); } to { opacity:1; } }
+  .phase h2 { font-family:var(--display); font-weight:600; font-size:25px; margin:0 0 6px; letter-spacing:-.02em; }
+  .phase .lede { color:var(--muted); margin:0 0 20px; max-width:76ch; font-size:15.5px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px 22px; margin-bottom:16px; box-shadow:var(--shadow); }
+  .lab { display:grid; grid-template-columns:244px 1fr; gap:22px; align-items:start; }
+  @media (max-width:760px){ .lab { grid-template-columns:1fr; } }
+  .controls { display:flex; flex-direction:column; gap:11px; }
+  .stage { min-width:0; display:flex; flex-direction:column; gap:14px; }
+  label.fld { display:block; font-family:var(--mono); font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  input[type=range] { width:100%; accent-color:var(--accent); height:4px; }
+  .slabel { display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .slabel b { color:var(--ink); font-size:14px; }
+  button.act { font-family:var(--sans); font-size:13px; background:var(--accent); color:#fff; border:none; padding:9px 14px; border-radius:9px; cursor:pointer; font-weight:500; text-align:left; box-shadow:0 4px 12px -5px color-mix(in srgb, var(--accent) 60%, transparent); transition:.14s; }
+  button.act:hover { filter:brightness(1.06); }
+  button.ghost { font-family:var(--sans); font-size:13px; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); padding:8px 12px; border-radius:9px; cursor:pointer; text-align:left; }
+  button.ghost:hover { border-color:var(--accent); }
+  button.ghost.sel { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .seg { display:flex; gap:6px; flex-wrap:wrap; } .seg button { flex:1 1 auto; }
+  .toggle { display:flex; align-items:center; gap:10px; font-size:13.5px; color:var(--ink); cursor:pointer; user-select:none; }
+  .toggle input { width:16px; height:16px; accent-color:var(--accent); }
+  .nav-item:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .verdict { font-family:var(--mono); font-size:13px; border-radius:9px; padding:11px 13px; border:1px solid var(--line); display:flex; gap:10px; align-items:baseline; background:var(--panel-2); }
+  .verdict .dot { width:9px; height:9px; border-radius:50%; flex:none; translate:0 2px; background:var(--muted); }
+  .verdict.ok { background:var(--good-soft); border-color:color-mix(in srgb,var(--good) 40%,transparent); } .verdict.ok .dot { background:var(--good); }
+  .verdict.bad { background:var(--bad-soft); border-color:color-mix(in srgb,var(--bad) 40%,transparent); } .verdict.bad .dot { background:var(--bad); }
+  .verdict.warn { background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 40%,transparent); } .verdict.warn .dot { background:var(--warn); }
+  .proof { font-size:13px; color:var(--muted); border-left:3px solid var(--accent); padding:8px 0 8px 13px; margin-top:2px; background:linear-gradient(90deg, var(--accent-soft), transparent 80%); border-radius:0 8px 8px 0; }
+  .proof b { color:var(--ink); }
+  code { font-family:var(--mono); background:var(--accent-soft); color:var(--accent); padding:1px 5px; border-radius:5px; font-size:.88em; }
+  .big { font-family:var(--mono); font-size:23px; font-variant-numeric:tabular-nums; }
+  .big small { font-size:11px; color:var(--muted); font-family:var(--mono); text-transform:uppercase; letter-spacing:.06em; display:block; }
+  svg.viz { width:100%; height:auto; display:block; background:var(--panel-2); border:1px solid var(--line); border-radius:12px; }
+  svg.viz text { font-family:var(--mono); }
+  .chart { display:flex; align-items:flex-end; gap:3px; height:150px; padding-top:12px; border-bottom:1px solid var(--line); position:relative; }
+  .colb { flex:1; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; gap:2px; height:100%; }
+  .gp { width:100%; border-radius:3px 3px 0 0; background:var(--accent); transition:height .3s; min-height:1px; }
+  .colb .rn { font-family:var(--mono); font-size:8px; color:var(--muted); }
+  .capline { position:absolute; left:0; right:0; border-top:2px dashed var(--bad); }
+  .krow { display:flex; gap:10px; flex-wrap:wrap; }
+  .kcard { flex:1 1 120px; border:1px solid var(--line); border-radius:9px; padding:9px 12px; background:var(--panel-2); }
+  .kcard h4 { margin:0 0 5px; font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:500; }
+  table.cmp { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px; }
+  table.cmp th, table.cmp td { text-align:right; padding:6px 9px; border-bottom:1px solid var(--line); }
+  table.cmp th:first-child, table.cmp td:first-child { text-align:left; }
+  table.cmp th { color:var(--muted); font-weight:500; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; }
+  .flow { display:flex; gap:4px; flex-wrap:wrap; min-height:26px; }
+  .tok { font-family:var(--mono); font-size:12px; padding:4px 7px; border-radius:7px; border:1px solid var(--line); background:var(--panel); }
+  .tok.ok { border-color:var(--good); color:var(--good); background:var(--good-soft); }
+  .tok.bad { border-color:var(--bad); color:var(--bad); background:var(--bad-soft); }
+  .log-list { font-family:var(--mono); font-size:12px; line-height:1.7; max-height:170px; overflow:auto; }
+  @media (max-width:880px) {
+    .app { display:block; }
+    .topbar { display:flex; align-items:center; gap:11px; position:sticky; top:0; z-index:30; padding:11px 16px; background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:saturate(1.5) blur(10px); border-bottom:1px solid var(--line); }
+    .topbar b { font-family:var(--display); font-weight:600; font-size:15.5px; }
+    .hamburger { margin-left:auto; display:grid; place-items:center; width:38px; height:38px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--ink); cursor:pointer; font-family:var(--mono); font-size:17px; }
+    .sidebar { position:fixed; top:0; left:0; height:100dvh; width:286px; transform:translateX(-100%); transition:transform .22s ease; box-shadow:0 0 70px rgba(0,0,0,.28); }
+    .app.nav-open .sidebar { transform:none; }
+    .backdrop { display:block; position:fixed; inset:0; z-index:39; background:rgba(0,0,0,.42); opacity:0; pointer-events:none; transition:opacity .22s; }
+    .app.nav-open .backdrop { opacity:1; pointer-events:auto; }
+    .main { padding:22px 18px 84px; }
+    .lab { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="glyph">⊘</span><span class="wm"><b>Rate Lab</b><span>Rate limiting</span></span></div>
+    <nav class="nav" id="nav" aria-label="Lessons"></nav>
+    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/rate-limiting" target="_blank" rel="noopener">View source ↗</a></div>
+  </aside>
+  <div class="backdrop" id="backdrop"></div>
+  <main class="main">
+    <div class="topbar"><span class="glyph">⊘</span><b>Rate Lab</b><button class="hamburger" id="hamburger" aria-label="Toggle navigation">≡</button></div>
+    <div class="main-inner">
+
+    <!-- OVERVIEW -->
+    <section class="phase" data-tab="Overview">
+      <div class="hero">
+        <p class="hero-eyebrow">Rate limiting · Rate Lab</p>
+        <h1>The front door decides who gets in.</h1>
+        <p>Admission control is the gateway's job, and every design adds it. This lab builds each algorithm from
+          scratch, shows the <strong>atomicity race</strong> that lets 20 requests through a limit of 5, and covers the
+          two laws that win the interview: <strong>fail-open for reads, fail-closed for money</strong>, and
+          <strong>exact-and-slow vs fast-and-approximate</strong>, chosen per endpoint.</p>
+      </div>
+      <div class="levers">
+        <div class="lever"><b>Algorithms</b><span>Fixed / sliding windows, token bucket, leaky bucket &amp; GCRA.</span></div>
+        <div class="lever"><b>Distributed</b><span>The atomic race, local vs borrowing, layered keys.</span></div>
+        <div class="lever"><b>Operating it</b><span>Fail-open/closed, the retry storm, concurrency limits.</span></div>
+        <div class="lever"><b>Decide per endpoint</b><span>Rate ≠ concurrency; protective ≈ ±5% OK, quota = exact.</span></div>
+      </div>
+      <p class="overview-hint"><b>Pick a lesson in the sidebar.</b> The one distinction most candidates miss:
+        <em>a rate limit caps the arrival rate; a concurrency limit caps in-flight work</em> — a low rate of slow,
+        expensive requests can still saturate a downstream a rate limiter would happily admit. Mature systems need both.</p>
+    </section>
+
+    <!-- 1 · FIXED WINDOW -->
+    <section class="phase" data-tab="1 · Fixed window">
+      <h2>Fixed window — simplest, with a boundary bug</h2>
+      <p class="lede">One counter per fixed window (<code>user:12:04</code>), reset each minute. Trivial and O(1), but a
+        client that straddles the boundary — bursting at the end of one window and the start of the next — sneaks
+        through <strong>2× the limit</strong> in a short span.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>limit per window</span><b id="fw-lv">5</b></div><input type="range" id="fw-l" min="2" max="10" value="5" /></div>
+          <button class="act" id="fw-run">▶ Burst at the boundary</button>
+          <div class="verdict" id="fw-verdict"><span class="dot"></span><span id="fw-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="fw-svg" viewBox="0 0 420 150"></svg>
+          <p class="proof"><b>The proof:</b> the counter resets at the window edge, so <span id="fw-n">10</span> requests
+            land in a few seconds — <b>2× the limit</b> of <span id="fw-l2">5</span> — by putting half at the end of
+            window A and half at the start of window B. Each window saw only 5; together they saw 10. Token bucket and
+            GCRA have no reset instant, so they don't have this bug.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 2 · TOKEN BUCKET -->
+    <section class="phase" data-tab="2 · Token bucket">
+      <h2>Token bucket — the default</h2>
+      <p class="lede">A bucket of <strong>capacity B</strong> refills at <strong>r tokens/sec</strong>; each request
+        spends one. It allows a burst up to B (a quiet client banks tokens) but enforces the sustained average r —
+        matching real bursty traffic. Just two numbers per key, lazy refill, no boundary bug. The industry default
+        (Stripe, AWS).</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>capacity (burst)</span><b id="tb-cv">5</b></div><input type="range" id="tb-c" min="1" max="12" value="5" /></div>
+          <div><div class="slabel"><span>refill / sec</span><b id="tb-rv">2</b></div><input type="range" id="tb-r" min="1" max="8" value="2" /></div>
+          <button class="act" id="tb-req">▶ Send a request</button>
+          <button class="ghost" id="tb-wait">⏱ Wait 1 second (refill)</button>
+          <button class="ghost" id="tb-reset">↺ Reset</button>
+          <div class="verdict" id="tb-verdict"><span class="dot"></span><span id="tb-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="tb-svg" viewBox="0 0 420 130"></svg>
+          <p class="proof"><b>The proof:</b> a full bucket lets a burst of B requests through instantly, then meters to
+            exactly r/sec as tokens drip back. Spam requests → throttled at empty; wait a second → r tokens return and
+            you can spend again. Bigger capacity = burstier; higher refill = higher sustained rate.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 3 · SLIDING LOG -->
+    <section class="phase" data-tab="3 · Sliding log">
+      <h2>Sliding window log — exact, but heavy</h2>
+      <p class="lede">Store the timestamp of <em>every</em> request; a request is allowed if fewer than N fall in the
+        last T seconds. Perfectly <strong>exact</strong> (no boundary bug, true rolling window) — but memory is
+        <strong>O(requests)</strong> per key, so it dies at scale.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="sl-req">▶ Send a request</button>
+          <button class="ghost" id="sl-tick">⏱ +1 second</button>
+          <button class="ghost" id="sl-reset">↺ Reset</button>
+          <div class="verdict" id="sl-verdict"><span class="dot"></span><span id="sl-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="sl-svg" viewBox="0 0 420 130"></svg>
+          <p class="proof"><b>The proof:</b> the window (limit 5 per 10 s) slides continuously — old timestamps fall off
+            the left edge and free capacity. It's exact because it counts the true rolling window, not a fixed bucket.
+            The cost is the stored list of timestamps: <b id="sl-mem">0</b> in memory right now, growing with every
+            admitted request. That O(requests) memory is why you reach for the counter next.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 4 · SLIDING COUNTER -->
+    <section class="phase" data-tab="4 · Sliding counter">
+      <h2>Sliding window counter — the sweet spot</h2>
+      <p class="lede">Keep just two integers: the current window's count and the previous window's, then weight the
+        previous by how much of it still overlaps the rolling window. Near-exact with <strong>O(1) memory</strong> — the
+        production choice for hard per-window quotas (Cloudflare uses it).</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><div class="slabel"><span>position in window</span><b id="sc-pv">50%</b></div><input type="range" id="sc-p" min="0" max="100" value="50" /></div>
+          <div class="verdict" id="sc-verdict"><span class="dot"></span><span id="sc-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="sc-svg" viewBox="0 0 420 150"></svg>
+          <p class="proof"><b>The proof:</b> the estimate = <code>current + previous × overlap</code>. As the rolling
+            window advances, the previous window's weight decays from 100% to 0%, smoothly aging out its contribution —
+            no boundary jump, no stored timestamp list. It assumes an even spread within a window (the approximation),
+            but with two integers it's within a percent or two of the exact log.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 6 · LEAKY & GCRA -->
+    <section class="phase" data-tab="6 · Leaky &amp; GCRA">
+      <h2>Leaky bucket &amp; GCRA — smooth output, one timestamp</h2>
+      <p class="lede">A <strong>leaky bucket</strong> queues requests and drains them at a fixed rate — perfectly smooth
+        output, but queuing adds latency and it hates bursts. <strong>GCRA</strong> is "a leaky bucket as a single
+        timestamp" (the TAT): token-bucket behavior with just one stored value and no refill loop — what Redis-Cell
+        implements.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">algorithm</label><div class="seg"><button class="ghost sel" id="lk-leaky">leaky bucket</button><button class="ghost" id="lk-gcra">GCRA</button></div></div>
+          <button class="act" id="lk-burst">▶ Send a burst of 6</button>
+          <div class="verdict" id="lk-verdict"><span class="dot"></span><span id="lk-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="lk-svg" viewBox="0 0 420 140"></svg>
+          <p class="proof"><b>The proof:</b> the leaky bucket forces the burst out one-every-500 ms — output is perfectly
+            smooth, but the 6th request waits ~2.5 s (the latency cost). GCRA stores only the TAT (theoretical arrival
+            time): it admits a burst up to a tolerance, then meters to the sustained rate — token-bucket behavior with a
+            single value and no background refill.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 5 · ATOMIC RACE -->
+    <section class="phase" data-tab="5 · Atomic race">
+      <h2>Distributed — the atomicity race</h2>
+      <p class="lede">One node is trivial; across a fleet the state lives in a shared store (Redis). The trap:
+        read-compute-write from the app <strong>races</strong> — two gateways read <code>tokens=1</code> at the same
+        instant and both allow. The fix is atomicity <em>in the store</em> (a Lua script / CAS), not in the app.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">enforcement</label><div class="seg"><button class="ghost sel" id="at-naive">naive GET→INCR</button><button class="ghost" id="at-lua">atomic Lua</button></div></div>
+          <button class="act" id="at-run">▶ 20 concurrent requests (limit 5)</button>
+          <div class="verdict" id="at-verdict"><span class="dot"></span><span id="at-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <div class="krow">
+            <div class="kcard"><h4>allowed</h4><div class="big" id="at-allowed">—</div></div>
+            <div class="kcard"><h4>limit</h4><div class="big" id="at-limit" style="color:var(--accent)">5</div></div>
+          </div>
+          <div class="flow" id="at-flow"></div>
+          <p class="proof"><b>The proof:</b> the naive limiter does GET, then INCR as two steps — 20 requests all read the
+            count before anyone writes, so <b>all 20 are allowed</b> (5× over). The atomic Lua path runs the whole
+            check-and-decrement as one indivisible operation in the store, so exactly <b>5</b> pass. Use the store's clock
+            inside the script too, never per-node wall clocks.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 7 · STRATEGIES -->
+    <section class="phase" data-tab="7 · Distributed strategies">
+      <h2>Exact-and-slow vs fast-and-approximate</h2>
+      <p class="lede">Holding a global limit across N gateways is a trade. <strong>Central store</strong>: exact, but a
+        synchronous hop on every request. <strong>Local divided quota</strong>: free, but LB skew false-throttles.
+        <strong>Local + batch-borrowing</strong>: the production answer — borrow 20 tokens at a time, ~1 store trip per
+        batch, a few % overshoot.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">strategy</label><div class="seg"><button class="ghost sel" id="ds-central">central</button><button class="ghost" id="ds-local">local ÷N</button><button class="ghost" id="ds-borrow">borrow</button></div></div>
+          <button class="act" id="ds-run">▶ 100 requests · limit 100 · 5 skewed nodes</button>
+          <div class="verdict" id="ds-verdict"><span class="dot"></span><span id="ds-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <table class="cmp"><thead><tr><th>strategy</th><th>allowed / 100</th><th>store trips</th><th>accuracy</th></tr></thead><tbody id="ds-tbody"></tbody></table>
+          <p class="proof"><b>The proof:</b> the central store admits exactly the limit but pays a trip per request. Local
+            divided quota does zero trips but a hot node exhausts its L/N and <b>false-throttles</b> while others sit
+            idle → under-admission. Borrowing hits the store ~once per batch and lands near the limit with a small
+            overshoot. Rate limits protect capacity, not billing — accept ~5% overshoot unless it's a quota.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 11 · LAYERED -->
+    <section class="phase" data-tab="11 · Layered keys">
+      <h2>Layered limits — a request passes every bucket</h2>
+      <p class="lede">Limits <strong>stack</strong>: a request must be admitted by all of per-IP → per-API-key/tier →
+        per-tenant (fairness) → per-endpoint → global (capacity floor). The first layer to deny wins and names itself in
+        the 429. Per-tenant limits are what stop a noisy neighbor from starving everyone else.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <button class="act" id="ly-a">▶ Request from tenant A (busy)</button>
+          <button class="act" id="ly-b">▶ Request from tenant B (quiet)</button>
+          <button class="ghost" id="ly-reset">↺ Reset</button>
+          <div class="verdict" id="ly-verdict"><span class="dot"></span><span id="ly-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <svg class="viz" id="ly-svg" viewBox="0 0 420 170"></svg>
+          <p class="proof"><b>The proof:</b> each request descends the stack; the first bucket with no tokens denies and
+            names the layer. Hammer tenant A and it's stopped at the <b>per-tenant</b> layer — but tenant B's requests
+            still sail through, because A's throttle is scoped to A's bucket (noisy-neighbor protection). A whale API key
+            is a hot partition: split its bucket into sub-buckets or give it dedicated capacity.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 8 · FAIL OPEN/CLOSED -->
+    <section class="phase" data-tab="8 · Fail-open/closed">
+      <h2>Redis is down — now what?</h2>
+      <p class="lede">The #1 failure probe. The answer that separates Staff: <strong>fail-open vs fail-closed is a
+        per-endpoint policy</strong>, not a global switch. Fail <em>open</em> for user-facing reads (availability beats
+        enforcement); fail <em>closed</em> for auth/payment (enforcement <em>is</em> the security). A conservative local
+        cap covers the gap either way.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <label class="toggle"><input type="checkbox" id="fc-down" /> The rate-limit store is DOWN</label>
+          <button class="act" id="fc-feed">▶ GET /feed (read)</button>
+          <button class="act" id="fc-login">▶ POST /login (auth)</button>
+          <button class="act" id="fc-pay">▶ POST /pay (money)</button>
+          <div class="verdict" id="fc-verdict"><span class="dot"></span><span id="fc-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <div class="log-list" id="fc-log">—</div>
+          <p class="proof"><b>The proof:</b> with the store up, all three enforce normally. With it down, <code>/feed</code>
+            <b>fails open</b> and still serves — you don't take down the read path because the limiter's dependency
+            blinked. <code>/login</code> and <code>/pay</code> <b>fail closed</b> (503) — you must not let an attacker
+            credential-stuff or replay payments freely just because Redis is unreachable. A conservative local cap keeps
+            reads from being truly unlimited. The limiter must never be a single point of failure for the whole API.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 9 · RETRY STORM -->
+    <section class="phase" data-tab="9 · Retry storm">
+      <h2>The retry storm — when the limiter amplifies load</h2>
+      <p class="lede">A 429 is part of the API contract. But naive clients that retry <em>immediately</em> pile their
+        retries on top of new traffic, so the limiter <strong>amplifies</strong> load instead of shedding it. The fix is
+        <strong>exponential backoff + jitter</strong> and a <code>Retry-After</code> header so well-behaved clients
+        self-regulate.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">client retry policy</label><div class="seg"><button class="ghost sel" id="rs-naive">retry immediately</button><button class="ghost" id="rs-backoff">backoff + jitter</button></div></div>
+          <button class="act" id="rs-run">▶ Run 20 ticks (overloaded)</button>
+          <div class="verdict" id="rs-verdict"><span class="dot"></span><span id="rs-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <div class="chart" id="rs-chart"></div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">offered load per tick (new + retries) · admit rate is flat</div>
+          <div class="krow">
+            <div class="kcard"><h4>edge reject cost</h4><div class="big" style="font-size:18px;color:var(--good)">~1 unit</div></div>
+            <div class="kcard"><h4>in-service reject cost</h4><div class="big" style="font-size:18px;color:var(--bad)">~20 units</div></div>
+          </div>
+          <p class="proof"><b>The proof:</b> immediate retries accumulate — offered load climbs every tick while the
+            limiter keeps rejecting, the storm feeding itself. Backoff + jitter spreads retries out so offered load stays
+            bounded and the system drains. And shed <em>early</em>: a rejection at the edge (WAF/CDN) costs ~nothing;
+            the same rejection inside the service already spent connection, TLS, auth, and a thread.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- 10 · CONCURRENCY -->
+    <section class="phase" data-tab="10 · Concurrency">
+      <h2>Rate ≠ concurrency</h2>
+      <p class="lede">A rate limiter caps <strong>arrivals</strong> per window. A concurrency limiter caps
+        <strong>in-flight</strong> work. A low rate of <em>slow</em> requests can still saturate a downstream a rate
+        limiter happily admits — because <em>in-flight = arrival rate × service time</em> (Little's Law). Mature systems
+        need both.</p>
+      <div class="card"><div class="lab">
+        <div class="controls">
+          <div><label class="fld">protection</label><div class="seg"><button class="ghost sel" id="co-rate">rate limit only</button><button class="ghost" id="co-conc">concurrency limit</button></div></div>
+          <div><div class="slabel"><span>service time (slow!)</span><b id="co-sv">6 ticks</b></div><input type="range" id="co-s" min="1" max="10" value="6" /></div>
+          <button class="act" id="co-run">▶ Run · 3 arrivals/tick, pool of 10</button>
+          <div class="verdict" id="co-verdict"><span class="dot"></span><span id="co-vtext">—</span></div>
+        </div>
+        <div class="stage">
+          <div class="chart" id="co-chart"></div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--muted)">in-flight requests per tick · red line = pool capacity (10)</div>
+          <p class="proof"><b>The proof:</b> the arrival rate (3/tick) is well within any rate limit, but each request
+            holds a slot for <span id="co-s2">6</span> ticks — so <b>in-flight = 3 × 6 = <span id="co-l">18</span></b>
+            (Little's Law) climbs past the pool of 10 and the downstream saturates. A rate limiter never sees it. A
+            concurrency limiter (a semaphore on in-flight count) holds it at 10, rejecting the overflow — the right tool
+            for a slow downstream.</p>
+        </div>
+      </div></div>
+    </section>
+
+    <div class="side-foot" style="margin-top:24px; padding-top:22px; border-top:1px solid var(--line); text-align:center">Browser port of the <code style="font-size:10px">src/phase*</code> scripts · same mechanics · MIT</div>
+    </div><!-- /main-inner -->
+  </main>
+</div>
+
+<script>
+const sections = [...document.querySelectorAll('section.phase')];
+const navEl = document.getElementById('nav'), appEl = document.getElementById('app');
+const tabButtons = [];
+const slug = s => s.dataset.tab.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const closeNav = () => appEl.classList.remove('nav-open');
+const TIER_OF = {
+  'overview':'Overview',
+  '1-fixed-window':'Algorithms','2-token-bucket':'Algorithms','3-sliding-log':'Algorithms','4-sliding-counter':'Algorithms','6-leaky-gcra':'Algorithms',
+  '5-atomic-race':'Distributed','7-distributed-strategies':'Distributed','11-layered-keys':'Distributed',
+  '8-fail-open-closed':'Operating it','9-retry-storm':'Operating it','10-concurrency':'Operating it',
+};
+navEl.setAttribute('role','tablist'); navEl.setAttribute('aria-orientation','vertical');
+let curTier=null, groupEl=null;
+sections.forEach((sec,i)=>{ const id=slug(sec), tier=TIER_OF[id]||'More';
+  if(tier!==curTier){ groupEl=document.createElement('div'); groupEl.className='nav-group';
+    const h=document.createElement('div'); h.className='nav-group-label'; h.textContent=tier; groupEl.appendChild(h); navEl.appendChild(groupEl); curTier=tier; }
+  sec.id='panel-'+id; sec.setAttribute('role','tabpanel');
+  const parts=sec.dataset.tab.split('·').map(s=>s.trim());
+  const b=document.createElement('button'); b.className='nav-item'; b.setAttribute('role','tab');
+  b.innerHTML=`<span class="n">${parts.length>1?parts[0]:''}</span><span class="t">${parts.length>1?parts[1]:parts[0]}</span>`;
+  b.onclick=()=>{ activate(i,true); closeNav(); };
+  b.onkeydown=(e)=>{ const d=e.key==='ArrowDown'?1:e.key==='ArrowUp'?-1:e.key==='Home'?'first':e.key==='End'?'last':0; if(!d)return; e.preventDefault();
+    const n=d==='first'?0:d==='last'?sections.length-1:(i+d+sections.length)%sections.length; activate(n,true); tabButtons[n].focus(); };
+  tabButtons.push(b); groupEl.appendChild(b); });
+function activate(i,push){ sections.forEach((s,j)=>s.classList.toggle('active',i===j));
+  tabButtons.forEach((b,j)=>{ const on=i===j; b.classList.toggle('active',on); b.setAttribute('aria-selected',String(on)); b.tabIndex=on?0:-1; });
+  if(push && location.hash.slice(1)!==slug(sections[i])) history.replaceState(null,'','#'+slug(sections[i]));
+  window.scrollTo({ top:0, behavior: reduceMotion?'auto':'smooth' });
+  if(PANELS[i] && !PANELS[i].done){ PANELS[i](); PANELS[i].done=true; } }
+function fromHash(){ const i=sections.findIndex(s=>slug(s)===location.hash.slice(1)); activate(i>=0?i:0,false); }
+addEventListener('hashchange',fromHash);
+document.getElementById('hamburger')?.addEventListener('click',()=>appEl.classList.toggle('nav-open'));
+document.getElementById('backdrop')?.addEventListener('click',closeNav);
+addEventListener('keydown',e=>{ if(e.key==='Escape') closeNav(); });
+
+const $=(s,r=document)=>r.querySelector(s), NS='http://www.w3.org/2000/svg';
+function S(tag, attrs={}, kids=[]){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k, attrs[k]); for(const c of [].concat(kids)) if(c) e.appendChild(c); return e; }
+function txt(t){ return document.createTextNode(t); }
+function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); return el; }
+function verdict(sel,tsel,kind,text){ const v=$(sel); v.className='verdict '+kind; $(tsel).innerHTML=text; }
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function chartBars(el, vals, colorFn, labelFn, capFrac){ clear(el); const mx=Math.max(...vals,1); vals.forEach((v,i)=>{ const col=S('div',{class:'colb'}); const bar=S('div',{class:'gp'}); bar.style.background=colorFn(v,i); bar.style.height=(v/mx*118)+'px'; const rn=S('div',{class:'rn'}); rn.textContent=labelFn?labelFn(i):''; col.appendChild(bar); col.appendChild(rn); el.appendChild(col); });
+  if(capFrac!=null){ const line=document.createElement('div'); line.className='capline'; line.style.bottom=(capFrac*118+22)+'px'; el.appendChild(line); } }
+
+const PANELS = {};
+const idxOf = tab => sections.findIndex(s=>s.dataset.tab===tab);
+
+/* ══ 1 · FIXED WINDOW ══ */
+PANELS[idxOf('1 · Fixed window')] = function(){
+  const svg=$('#fw-svg');
+  function render(fired){ const L=+$('#fw-l').value; $('#fw-lv').textContent=L; $('#fw-l2').textContent=L; $('#fw-n').textContent=2*L;
+    clear(svg);
+    // two windows side by side
+    svg.appendChild(S('rect',{x:20,y:30,width:180,height:60,rx:6,fill:'var(--panel)',stroke:'var(--line)'}));
+    svg.appendChild(S('rect',{x:220,y:30,width:180,height:60,rx:6,fill:'var(--panel)',stroke:'var(--line)'}));
+    svg.appendChild(S('text',{x:110,y:22,'text-anchor':'middle','font-size':9,fill:'var(--muted)'},[txt('window A (12:04)')]));
+    svg.appendChild(S('text',{x:310,y:22,'text-anchor':'middle','font-size':9,fill:'var(--muted)'},[txt('window B (12:05)')]));
+    svg.appendChild(S('line',{x1:210,y1:20,x2:210,y2:110,stroke:'var(--accent)','stroke-width':1.5,'stroke-dasharray':'4 3'}));
+    svg.appendChild(S('text',{x:210,y:124,'text-anchor':'middle','font-size':8.5,fill:'var(--accent)'},[txt('◄ boundary — counter resets ►')]));
+    if(fired){ for(let i=0;i<L;i++){ svg.appendChild(S('circle',{cx:40+i*(160/L),cy:60,r:6,fill:'var(--good)'})); svg.appendChild(S('circle',{cx:240+i*(160/L),cy:60,r:6,fill:'var(--good)'})); } }
+    if(fired) verdict('#fw-verdict','#fw-vtext','bad',`<b>${2*L}</b> requests admitted in a few seconds — <b>2× the limit</b> of ${L}. Each window counted only ${L}; straddling the boundary doubled the real rate.`);
+    else verdict('#fw-verdict','#fw-vtext','warn','Fire a burst that straddles the window boundary.');
+  }
+  $('#fw-l').oninput=()=>render(false); $('#fw-run').onclick=()=>render(true); render(false);
+};
+
+/* ══ 2 · TOKEN BUCKET ══ */
+PANELS[idxOf('2 · Token bucket')] = function(){
+  const svg=$('#tb-svg'); let tokens, cap, rate;
+  function reset(){ cap=+$('#tb-c').value; rate=+$('#tb-r').value; tokens=cap; $('#tb-cv').textContent=cap; $('#tb-rv').textContent=rate; paint('Bucket full. Send requests to drain it, or wait to refill.','warn'); }
+  function paint(msg,kind){ clear(svg);
+    svg.appendChild(S('rect',{x:150,y:20,width:120,height:90,rx:8,fill:'none',stroke:'var(--line)','stroke-width':2}));
+    const frac=tokens/cap; const h=86*frac; svg.appendChild(S('rect',{x:152,y:108-h,width:116,height:h,rx:6,fill:'var(--accent-soft)'}));
+    for(let i=0;i<Math.floor(tokens);i++) svg.appendChild(S('circle',{cx:165+(i%6)*17,cy:100-Math.floor(i/6)*16,r:5,fill:'var(--accent)'}));
+    svg.appendChild(S('text',{x:210,y:14,'text-anchor':'middle','font-size':9,fill:'var(--muted)'},[txt(`${tokens.toFixed(1)} / ${cap} tokens · +${rate}/s`)]));
+    verdict('#tb-verdict','#tb-vtext',kind,msg); }
+  $('#tb-req').onclick=()=>{ if(tokens>=1){ tokens-=1; paint(`✓ allowed — spent a token (${tokens.toFixed(1)} left).`,'ok'); } else paint(`✗ throttled — bucket empty. Wait ~${(1/rate).toFixed(1)}s for a token.`,'bad'); };
+  $('#tb-wait').onclick=()=>{ tokens=Math.min(cap,tokens+rate); paint(`Waited 1s → +${rate} tokens (${tokens.toFixed(1)} now). Sustained rate = ${rate}/s.`,'ok'); };
+  $('#tb-reset').onclick=reset; ['#tb-c','#tb-r'].forEach(id=>$(id).oninput=reset); reset();
+};
+
+/* ══ 3 · SLIDING LOG ══ */
+PANELS[idxOf('3 · Sliding log')] = function(){
+  const svg=$('#sl-svg'), L=5, W=10; let now=0, stamps=[];
+  function paint(msg,kind){ stamps=stamps.filter(t=>t>now-W); clear(svg);
+    svg.appendChild(S('rect',{x:20,y:40,width:380,height:30,rx:6,fill:'var(--panel)',stroke:'var(--line)'}));
+    // window is the whole visible bar; map t in [now-W, now] to x
+    for(const t of stamps){ const x=20+ ((t-(now-W))/W)*380; svg.appendChild(S('circle',{cx:Math.max(22,Math.min(398,x)),cy:55,r:5,fill:'var(--accent)'})); }
+    svg.appendChild(S('text',{x:20,y:34,'font-size':8.5,fill:'var(--muted)'},[txt(`now-${W}s`)])); svg.appendChild(S('text',{x:398,y:34,'text-anchor':'end','font-size':8.5,fill:'var(--muted)'},[txt('now')]));
+    svg.appendChild(S('text',{x:210,y:92,'text-anchor':'middle','font-size':9,fill:'var(--muted)'},[txt(`${stamps.length} of ${L} in the last ${W}s · t=${now}s`)]));
+    $('#sl-mem').textContent=stamps.length+' timestamps'; verdict('#sl-verdict','#sl-vtext',kind,msg); }
+  $('#sl-req').onclick=()=>{ if(stamps.length<L){ stamps.push(now); paint(`✓ allowed — ${stamps.length}/${L} timestamps stored in the window.`,'ok'); } else paint(`✗ throttled — ${L} requests already in the last ${W}s. Advance time to free capacity.`,'bad'); };
+  $('#sl-tick').onclick=()=>{ now+=2; paint(`Advanced to t=${now}s — old timestamps slide off the left edge and free capacity.`,'warn'); };
+  $('#sl-reset').onclick=()=>{ now=0; stamps=[]; paint('Send requests — each stores a timestamp (the O(requests) memory cost).','warn'); };
+  $('#sl-reset').onclick();
+};
+
+/* ══ 4 · SLIDING COUNTER ══ */
+PANELS[idxOf('4 · Sliding counter')] = function(){
+  const svg=$('#sc-svg'), L=100, prev=90, cur=30;
+  function render(){ const p=+$('#sc-p').value/100; $('#sc-pv').textContent=Math.round(p*100)+'%';
+    const overlap=1-p; const est=cur+prev*overlap; clear(svg);
+    // previous window (fading) + current
+    svg.appendChild(S('rect',{x:30,y:40,width:170,height:44,rx:6,fill:'var(--panel-2)',stroke:'var(--line)',opacity:overlap*0.8+0.2}));
+    svg.appendChild(S('rect',{x:210,y:40,width:180,height:44,rx:6,fill:'var(--accent-soft)',stroke:'var(--accent)'}));
+    svg.appendChild(S('text',{x:115,y:34,'text-anchor':'middle','font-size':9,fill:'var(--muted)'},[txt(`prev window (${prev}) × ${Math.round(overlap*100)}%`)]));
+    svg.appendChild(S('text',{x:300,y:34,'text-anchor':'middle','font-size':9,fill:'var(--accent)'},[txt(`current window (${cur})`)]));
+    // sliding window marker
+    const wx=30+p*250; svg.appendChild(S('line',{x1:wx,y1:30,x2:wx,y2:96,stroke:'var(--accent)','stroke-width':1.5,'stroke-dasharray':'3 3'}));
+    svg.appendChild(S('text',{x:210,y:118,'text-anchor':'middle','font-size':11,fill:'var(--ink)'},[txt(`estimate = ${cur} + ${prev}×${overlap.toFixed(2)} = ${est.toFixed(0)} / ${L}`)]));
+    verdict('#sc-verdict','#sc-vtext', est<=L?'ok':'bad', `At ${Math.round(p*100)}% through the window, the previous count is weighted ${Math.round(overlap*100)}% → estimate <b>${est.toFixed(0)}</b> (limit ${L}). Two integers, no timestamp list.`);
+  }
+  $('#sc-p').oninput=render; render();
+};
+
+/* ══ 6 · LEAKY & GCRA ══ */
+PANELS[idxOf('6 · Leaky & GCRA')] = function(){
+  const svg=$('#lk-svg'); let mode='leaky';
+  function setMode(m){ mode=m; $('#lk-leaky').classList.toggle('sel',m==='leaky'); $('#lk-gcra').classList.toggle('sel',m==='gcra'); render(null); }
+  $('#lk-leaky').onclick=()=>setMode('leaky'); $('#lk-gcra').onclick=()=>setMode('gcra');
+  function render(times){ clear(svg);
+    svg.appendChild(S('line',{x1:20,y1:80,x2:400,y2:80,stroke:'var(--line)','stroke-width':1}));
+    for(let s=0;s<=5;s++){ const x=20+s*70; svg.appendChild(S('line',{x1:x,y1:76,x2:x,y2:84,stroke:'var(--muted)','stroke-width':1})); svg.appendChild(S('text',{x,y:98,'text-anchor':'middle','font-size':8,fill:'var(--muted)'},[txt(s+'s')])); }
+    if(times){ times.forEach((t,i)=>{ const x=20+t*70; svg.appendChild(S('circle',{cx:x,cy:80,r:6,fill: t<=0.01?'var(--accent)':'var(--good)'})); svg.appendChild(S('text',{x,y:64,'text-anchor':'middle','font-size':8,fill:'var(--muted)'},[txt('#'+(i+1))])); }); }
+    svg.appendChild(S('text',{x:20,y:24,'font-size':9,fill:'var(--muted)'},[txt('admission time of each of 6 burst requests →')]));
+  }
+  $('#lk-burst').onclick=()=>{
+    if(mode==='leaky'){ const times=[0,0.5,1,1.5,2,2.5]; render(times); // drains one per 500ms
+      verdict('#lk-verdict','#lk-vtext','warn','Leaky bucket: all 6 queued, drained one every 500 ms → output perfectly smooth, but #6 waits <b>2.5 s</b> (the latency cost). Burst-hostile.'); }
+    else { const times=[0,0,0,0.5,1,1.5]; render(times); // GCRA: tolerance admits a burst of 3, then meters
+      verdict('#lk-verdict','#lk-vtext','ok','GCRA: a single TAT admits a burst up to tolerance (first 3 instantly), then meters to the sustained rate — token-bucket behavior with one stored timestamp, no queue, no refill loop.'); }
+  };
+  setMode('leaky');
+};
+
+/* ══ 5 · ATOMIC RACE ══ */
+PANELS[idxOf('5 · Atomic race')] = function(){
+  let mode='naive';
+  function setMode(m){ mode=m; $('#at-naive').classList.toggle('sel',m==='naive'); $('#at-lua').classList.toggle('sel',m==='lua'); }
+  $('#at-naive').onclick=()=>setMode('naive'); $('#at-lua').onclick=()=>setMode('lua');
+  $('#at-run').onclick=()=>{ const L=5, N=20; let allowed;
+    if(mode==='naive') allowed=N; else allowed=L;
+    $('#at-allowed').textContent=allowed; $('#at-allowed').style.color = allowed>L?'var(--bad)':'var(--good)';
+    $('#at-flow').innerHTML=Array.from({length:N},(_,i)=>`<span class="tok ${i<allowed?'ok':'bad'}">${i<allowed?'✓':'✗'}</span>`).join('');
+    if(mode==='naive') verdict('#at-verdict','#at-vtext','bad',`Naive GET→INCR: all 20 read <code>count=0</code> before anyone writes → <b>all 20 allowed</b> (5× over the limit). That's the race.`);
+    else verdict('#at-verdict','#at-vtext','ok',`Atomic Lua: check-and-decrement is one indivisible op in the store → exactly <b>5</b> allowed, 15 throttled. The fix is atomicity in the store, not the app.`);
+  };
+  setMode('naive'); $('#at-run').click();
+};
+
+/* ══ 7 · STRATEGIES ══ */
+PANELS[idxOf('7 · Distributed strategies')] = function(){
+  const L=100, N=5, REQ=100;
+  // skewed distribution across nodes
+  const skew=[40,25,15,12,8]; // requests per node (sums 100)
+  const central={allowed:100, trips:100, acc:'exact'};
+  // local ÷N: each node cap 20; node0 gets 40 → allows 20, throttles 20 → total allowed = 20+20+15+12+8=75
+  const localAllowed=skew.reduce((a,c)=>a+Math.min(c,L/N),0);
+  const local={allowed:localAllowed, trips:0, acc:'false-throttle'};
+  const borrow={allowed:104, trips:Math.ceil(REQ/20), acc:'≈exact (+4%)'};
+  const DATA={central, local, borrow}; let mode='central';
+  function setMode(m){ mode=m; ['central','local','borrow'].forEach(x=>$('#ds-'+x).classList.toggle('sel',x===m)); render(); }
+  ['central','local','borrow'].forEach(m=>$('#ds-'+m).onclick=()=>setMode(m));
+  function render(){ $('#ds-tbody').innerHTML=[['central',central],['local ÷N',local],['borrow',borrow]].map(([n,d],i)=>{ const key=['central','local','borrow'][i]; return `<tr${key===mode?' style="color:var(--accent)"':''}><td>${n}</td><td>${d.allowed}</td><td>${d.trips}</td><td>${d.acc}</td></tr>`; }).join('');
+    const d=DATA[mode];
+    if(mode==='central') verdict('#ds-verdict','#ds-vtext','ok',`Central store: exactly <b>${d.allowed}</b> allowed (correct) — but <b>${d.trips}</b> store trips, a synchronous hop on every request.`);
+    else if(mode==='local') verdict('#ds-verdict','#ds-vtext','bad',`Local ÷N: <b>0</b> trips, but the hot node (40 reqs, cap ${L/N}) false-throttles 20 → only <b>${d.allowed}/100</b> admitted. LB skew wastes quota.`);
+    else verdict('#ds-verdict','#ds-vtext','warn',`Borrow: ~<b>${d.trips}</b> trips (1 per batch of 20), <b>${d.allowed}/100</b> — near-exact with a small overshoot. The production answer.`);
+  }
+  setMode('central');
+};
+
+/* ══ 11 · LAYERED ══ */
+PANELS[idxOf('11 · Layered keys')] = function(){
+  const svg=$('#ly-svg');
+  const layers=[{name:'per-IP',cap:8},{name:'per-API-key (tier)',cap:6},{name:'per-tenant (fairness)',cap:4},{name:'per-endpoint',cap:10},{name:'global floor',cap:20}];
+  let counts, gcount;
+  function reset(){ counts={A:layers.map(()=>0),B:layers.map(()=>0)}; gcount=0; paint(null,'warn','Send requests from each tenant; watch which layer denies.'); }
+  function request(t){ // returns index of first denying layer or -1
+    for(let i=0;i<layers.length;i++){ const isTenant=layers[i].name.includes('tenant'); const c = layers[i].name.includes('global')? gcount : counts[t][i];
+      if(c>=layers[i].cap) return i; }
+    for(let i=0;i<layers.length;i++) counts[t][i]++; gcount++; return -1; }
+  function paint(denied,kind,msg,t){ clear(svg);
+    layers.forEach((l,i)=>{ const y=14+i*30; const denyHere=denied===i;
+      svg.appendChild(S('rect',{x:20,y,width:380,height:24,rx:5,fill: denyHere?'var(--bad-soft)':'var(--panel)',stroke: denyHere?'var(--bad)':'var(--line)'}));
+      const used = l.name.includes('global')?gcount:(t?counts[t][i]:0);
+      svg.appendChild(S('text',{x:28,y:y+16,'font-size':10,fill:'var(--ink)'},[txt(l.name)]));
+      svg.appendChild(S('text',{x:392,y:y+16,'text-anchor':'end','font-size':10,fill: denyHere?'var(--bad)':'var(--muted)'},[txt(`${used}/${l.cap}`)])); });
+    if(msg) verdict('#ly-verdict','#ly-vtext',kind,msg); }
+  $('#ly-a').onclick=()=>{ const d=request('A'); paint(d,d<0?'ok':'bad', d<0?`Tenant A request <b>passed all 5 layers</b>.`:`Tenant A <b>denied at the ${layers[d].name} layer</b> (429). ${layers[d].name.includes('tenant')?'Its fairness cap is hit — but tenant B is unaffected.':''}`,'A'); };
+  $('#ly-b').onclick=()=>{ const d=request('B'); paint(d,d<0?'ok':'bad', d<0?`Tenant B request <b>passed</b> — B is quiet, so even while A is throttled at its tenant cap, B sails through (noisy-neighbor protection).`:`Tenant B denied at the ${layers[d].name} layer.`,'B'); };
+  $('#ly-reset').onclick=reset; reset();
+};
+
+/* ══ 8 · FAIL OPEN/CLOSED ══ */
+PANELS[idxOf('8 · Fail-open/closed')] = function(){
+  let logs=[];
+  function hit(name,policy){ const down=$('#fc-down').checked; let res, kind;
+    if(!down){ res='enforced against store → allowed (within limit)'; kind='ok'; }
+    else if(policy==='open'){ res='store DOWN → <b>fail-open</b> → served (local cap still applies)'; kind='ok'; }
+    else { res='store DOWN → <b>fail-closed</b> → 503 rejected (enforcement is the security)'; kind='bad'; }
+    logs.unshift(`${name} · ${res}`); if(logs.length>8)logs.pop(); $('#fc-log').innerHTML=logs.join('<br>');
+    verdict('#fc-verdict','#fc-vtext',kind, down? (policy==='open'?`<code>${name}</code> fails <b>open</b> — a read path stays up when the limiter's dependency blinks.`:`<code>${name}</code> fails <b>closed</b> (503) — you don't let auth/payment run unlimited because Redis is down.`) : `Store up: <code>${name}</code> enforced normally.`);
+  }
+  $('#fc-feed').onclick=()=>hit('GET /feed','open'); $('#fc-login').onclick=()=>hit('POST /login','closed'); $('#fc-pay').onclick=()=>hit('POST /pay','closed');
+  $('#fc-down').onchange=()=>{ verdict('#fc-verdict','#fc-vtext', $('#fc-down').checked?'warn':'ok', $('#fc-down').checked?'Store is DOWN — now hit each endpoint and watch the per-endpoint policy.':'Store is up — all endpoints enforce normally.'); };
+  verdict('#fc-verdict','#fc-vtext','warn','Hit the three endpoints with the store up, then toggle it down.');
+};
+
+/* ══ 9 · RETRY STORM ══ */
+PANELS[idxOf('9 · Retry storm')] = function(){
+  const TICKS=20, ADMIT=5, NEW=8; let mode='naive';
+  function setMode(m){ mode=m; $('#rs-naive').classList.toggle('sel',m==='naive'); $('#rs-backoff').classList.toggle('sel',m==='backoff'); }
+  $('#rs-naive').onclick=()=>setMode('naive'); $('#rs-backoff').onclick=()=>setMode('backoff');
+  $('#rs-run').onclick=()=>{ const rnd=mulberry32(7); let pending=0; const offered=[];
+    for(let t=0;t<TICKS;t++){ let off=NEW+pending; if(mode==='backoff') off=NEW+Math.round(pending*0.25); // backoff spreads retries out
+      const admitted=Math.min(ADMIT,off); const rejected=off-admitted;
+      pending = mode==='naive'? rejected : Math.round(rejected*0.5); offered.push(off); }
+    chartBars($('#rs-chart'), offered, v=> mode==='naive'?'var(--bad)':'var(--good)', i=> i%5===0?'t'+i:'');
+    const last=offered[offered.length-1];
+    if(mode==='naive') verdict('#rs-verdict','#rs-vtext','bad',`Immediate retries pile up: offered load climbs to <b>${last}/tick</b> and keeps growing — the limiter amplifies load into a storm.`);
+    else verdict('#rs-verdict','#rs-vtext','ok',`Backoff + jitter spreads retries → offered load stays bounded (~<b>${last}/tick</b>) and the system drains instead of amplifying.`);
+  };
+  setMode('naive'); $('#rs-run').click();
+};
+
+/* ══ 10 · CONCURRENCY ══ */
+PANELS[idxOf('10 · Concurrency')] = function(){
+  const TICKS=20, ARR=3, POOL=10; let mode='rate';
+  function setMode(m){ mode=m; $('#co-rate').classList.toggle('sel',m==='rate'); $('#co-conc').classList.toggle('sel',m==='conc'); }
+  $('#co-rate').onclick=()=>setMode('rate'); $('#co-conc').onclick=()=>setMode('conc');
+  function run(){ const svc=+$('#co-s').value; $('#co-sv').textContent=svc+' ticks'; $('#co-s2').textContent=svc; $('#co-l').textContent=ARR*svc;
+    const inflight=[]; const active=[]; // list of finish-ticks
+    for(let t=0;t<TICKS;t++){ // release finished
+      for(let i=active.length-1;i>=0;i--) if(active[i]<=t) active.splice(i,1);
+      let admit=ARR; if(mode==='conc') admit=Math.min(ARR, POOL-active.length);
+      for(let k=0;k<admit;k++) active.push(t+svc); inflight.push(active.length); }
+    chartBars($('#co-chart'), inflight, v=> v>POOL?'var(--bad)':'var(--good)', i=> i%5===0?'t'+i:'', POOL/Math.max(...inflight,POOL));
+    const peak=Math.max(...inflight);
+    if(mode==='rate') verdict('#co-verdict','#co-vtext','bad',`Rate limit only: arrivals (${ARR}/tick) are fine, but in-flight = ${ARR}×${svc} = <b>${ARR*svc}</b> climbs past the pool of ${POOL} → the downstream saturates. The rate limiter never sees it.`);
+    else verdict('#co-verdict','#co-vtext','ok',`Concurrency limiter: in-flight held at <b>${peak}≤${POOL}</b> (a semaphore on in-flight count) — the overflow is rejected, protecting the slow downstream.`);
+  }
+  $('#co-rate').onclick=()=>{ setMode('rate'); run(); }; $('#co-conc').onclick=()=>{ setMode('conc'); run(); };
+  $('#co-run').onclick=run; $('#co-s').oninput=run; setMode('rate'); run();
+};
+fromHash();
+</script>
+</body>
+</html>
