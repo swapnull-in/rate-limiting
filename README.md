@@ -114,6 +114,14 @@ web/
   index.html  ·  serve.mjs   (the interactive Rate Lab — npm run web)
 ```
 
+## Drill & study guide
+
+The web lab has a **Drill** tab — the matching study module's interview questions
+and cheat-sheet one-liners as click-to-reveal cards (active recall: answer out
+loud before revealing). [`STUDY-GUIDE.md`](STUDY-GUIDE.md) maps every phase to
+the exact module section it implements, with the staff-level insight quoted, and
+points to the deep dives to read next.
+
 ## License
 
 MIT — use it, fork it, learn from it.

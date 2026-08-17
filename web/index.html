@@ -148,7 +148,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="brand"><span class="glyph">⊘</span><span class="wm"><b>Rate Lab</b><span>Rate limiting</span></span></div>
     <nav class="nav" id="nav" aria-label="Lessons"></nav>
-    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/rate-limiting" target="_blank" rel="noopener">View source ↗</a></div>
+    <div class="side-foot">Every panel is also a runnable <code style="font-size:10px">npm run phaseN</code>.<br /><a href="https://github.com/swapnull-in/rate-limiting" target="_blank" rel="noopener">View source ↗</a> · <a href="https://system-design-labs.pages.dev" target="_blank" rel="noopener">all 10 labs ↗</a></div>
   </aside>
   <div class="backdrop" id="backdrop"></div>
   <main class="main">
@@ -447,6 +447,8 @@
   </main>
 </div>
 
+<script src="drill-data.js"></script>
+<script src="drill.js"></script>
 <script>
 const sections = [...document.querySelectorAll('section.phase')];
 const navEl = document.getElementById('nav'), appEl = document.getElementById('app');
@@ -455,6 +457,7 @@ const slug = s => s.dataset.tab.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const closeNav = () => appEl.classList.remove('nav-open');
 const TIER_OF = {
+  'drill':'Practice',
   'overview':'Overview',
   '1-fixed-window':'Algorithms','2-token-bucket':'Algorithms','3-sliding-log':'Algorithms','4-sliding-counter':'Algorithms','6-leaky-gcra':'Algorithms',
   '5-atomic-race':'Distributed','7-distributed-strategies':'Distributed','11-layered-keys':'Distributed',
