@@ -19,7 +19,7 @@
  * show the 429 + Retry-After contract a real API returns.
  */
 
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import { log } from "../lib/log.ts";
 
 const redis = new Redis();

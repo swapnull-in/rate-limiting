@@ -20,7 +20,7 @@ This repo is the runnable half of **Deep Dive 22 — Rate Limiting & Admission C
 
 ## Go deeper
 
-- **Deep Dives/09-api-gateway.md** — where the limiter lives: the gateway's middleware menu, and why per-node counters silently multiply your limit by N.
-- **Deep Dives/01-redis.md** — the store itself: atomic INCR/Lua, sharding by key, and the rate-limiter recipe in §5.4.
-- **Core Course/11-reliability.md** — the surrounding toolkit: timeouts, circuit breakers, and where admission control fits among them.
-- **Core Course/28-designing-for-failure.md** — degrading by priority under global pressure: shedding anonymous reads before authenticated writes.
+- **[Deep Dives/09-api-gateway.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/09-api-gateway.md)** — where the limiter lives: the gateway's middleware menu, and why per-node counters silently multiply your limit by N.
+- **[Deep Dives/01-redis.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/01-redis.md)** — the store itself: atomic INCR/Lua, sharding by key, and the rate-limiter recipe in §5.4.
+- **[Core Course/11-reliability.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/11-reliability.md)** — the surrounding toolkit: timeouts, circuit breakers, and where admission control fits among them.
+- **[Core Course/28-designing-for-failure.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/28-designing-for-failure.md)** — degrading by priority under global pressure: shedding anonymous reads before authenticated writes.
