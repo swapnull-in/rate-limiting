@@ -17,6 +17,7 @@ This repo is the runnable half of **Deep Dive 22 — Rate Limiting & Admission C
 | 9 | The 429 contract and the retry storm | §4 Response contract | "naive clients retry immediately on 429 → the limiter amplifies load instead of shedding it" |
 | 10 | Concurrency limiter vs rate limiter | §1 What it's for | "Rate = requests per window. Concurrency = in-flight requests — saying this unprompted is a Staff signal" |
 | 11 | Layered keys + the hot-key whale | §5 Keying · §6 | "Limits stack — a request passes all applicable buckets"; "split, cache, or isolate the whale" |
+| 12 | A fetch-budget scheduler: round-robin vs priority vs priority + ceiling, at full and half quota | Core 50 §4 (the fetch budget) | "The fetch budget is the constraint, so the scheduler is an allocator. I measure late alerts per tier, not fetches per second." |
 
 ## Go deeper
 
@@ -24,3 +25,4 @@ This repo is the runnable half of **Deep Dive 22 — Rate Limiting & Admission C
 - **[Deep Dives/01-redis.md](https://github.com/swapnull-in/system-design/blob/main/Deep%20Dives/01-redis.md)** — the store itself: atomic INCR/Lua, sharding by key, and the rate-limiter recipe in §5.4.
 - **[Core Course/11-reliability.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/11-reliability.md)** — the surrounding toolkit: timeouts, circuit breakers, and where admission control fits among them.
 - **[Core Course/28-designing-for-failure.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/28-designing-for-failure.md)** — degrading by priority under global pressure: shedding anonymous reads before authenticated writes.
+- **[Core Course/50-design-price-tracker.md](https://github.com/swapnull-in/system-design/blob/main/Core%20Course/50-design-price-tracker.md)** — the design phase 12 comes from: tiered refresh SLOs, change-only price history, alert matching as a range query, and confirmation fetches.

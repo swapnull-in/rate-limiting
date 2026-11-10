@@ -16,6 +16,7 @@
     "phase9": "node src/phase9/retry-storm.ts",
     "phase10": "node src/phase10/concurrency-limit.ts",
     "phase11": "node src/phase11/layered-limits.ts",
+    "phase12": "node src/phase12/fetch-budget.ts",
     "web": "node web/serve.mjs",
     "deploy": "npx wrangler pages deploy web --project-name rate-limiting",
     "typecheck": "tsc --noEmit"

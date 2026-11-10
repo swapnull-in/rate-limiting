@@ -81,6 +81,16 @@ window.DRILL = {
       topic: "Layered keying",
       q: "What keys does a real request get limited on?",
       a: "Limits stack — a request must pass <b>all</b> applicable buckets: per-IP (edge, abuse) → per-API-key/user (gateway, tiers) → per-tenant (fairness) → per-endpoint (expensive routes tighter) → global (capacity floor). Rules live in hot-reloadable config owned by the gateway/sidecar — services should not hand-roll their own."
+    },
+    {
+      topic: "fetch budget",
+      q: "You track prices for 20M products but the retailer's API allows about 2,000 lookups a second. How do you decide what to check, and how do you know the policy is good?",
+      a: "The quota is the binding constraint, so the scheduler is an <b>allocator</b>. Checking everything on one interval makes a product with 100k watchers wait as long as one with a single watcher. Rank by <b>staleness × √(watchers × volatility)</b>: staleness makes everything rise eventually, watchers and how often the price has been moving decide how fast. Add a <b>ceiling</b> on the interval so unwatched products are still checked and charts don't go blank. Measure <b>alert delay weighted by watchers</b> and late alerts per tier, never fetches per second, which is fixed."
+    },
+    {
+      topic: "fetch budget",
+      q: "On a sale day the retailer starts returning 429s and your effective budget halves. What should your client do?",
+      a: "Honour <code>Retry-After</code> and back off with jitter instead of retrying into the limit, and <b>shrink the budget the scheduler spends</b> rather than queueing fetches that will be throttled. Because the scheduler ranks by priority, the cut lands as longer intervals: the most-watched products stay inside their target while the tail waits longer, bounded by the ceiling. Tell users the truth in the UI ('price last confirmed 3 h ago'), and treat any crowdsourced price as a hint that moves a product up the queue, not as data."
     }
   ]
 };

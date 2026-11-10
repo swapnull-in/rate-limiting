@@ -40,6 +40,7 @@ Phases 1–4 use a virtual clock so the output is exact and reproducible.
 | `npm run phase9` | **The retry storm** | naive 429-retry amplifies load; backoff + jitter drains it |
 | `npm run phase10` | **Concurrency limiting** | rate ≠ concurrency; Little's Law; a slow downstream saturates |
 | `npm run phase11` | **Layered limits** | per-IP → key → tenant → endpoint → global; fairness; the whale |
+| `npm run phase12` | **Spending a fetch budget** | you are the rate-limited client: round-robin vs priority by staleness × √(watchers × volatility), an interval ceiling, half-budget throttling *(Core 50)* |
 
 > **Phases 6–11 fold in the Staff-level depth** — the missing algorithms (leaky/GCRA),
 > the three distributed strategies, the failure-mode probe (fail-open/closed), the
@@ -110,6 +111,7 @@ src/
   phase9/  the retry storm + response contract
   phase10/ concurrency limiting (rate ≠ concurrency)
   phase11/ layered limits + the hot-key whale
+  phase12/ spending a fetch budget (the client side of the limit)
 web/
   index.html  ·  serve.mjs   (the interactive Rate Lab — npm run web)
 ```
